@@ -99,7 +99,7 @@ The server will start on `http://localhost:3000`
 - `GET /api/stripe/payment-intents/:id` - Get payment intent status
 - `POST /api/stripe/checkout-sessions` - Create Stripe Checkout session for subscriptions
 - `GET /api/stripe/checkout-sessions/:id` - Get checkout session status
-- `POST /api/stripe/webhook` - Handle Stripe webhook events
+- `POST /api/stripe/webhooks` - Handle Stripe webhook events
 
 ## Usage Examples
 
@@ -229,33 +229,120 @@ Response:
 
 ## Webhook Integration
 
-### Automatic Event Handling
+### Frontend-Ready Event Handling
 
-The webhook handler automatically processes Stripe events and logs them to the console:
+The webhook handler now returns structured responses that your frontend can use to update your database:
 
-#### Supported Events:
+#### Response Format:
 
-- **`checkout.session.completed`** → Logs successful checkout completion
-- **`checkout.session.expired`** → Logs expired checkout sessions
-- **`customer.subscription.created`** → Logs new subscription creation
-- **`customer.subscription.updated`** → Logs subscription updates
-- **`customer.subscription.deleted`** → Logs subscription cancellations
-- **`invoice.payment_succeeded`** → Logs successful payments
-- **`invoice.payment_failed`** → Logs failed payments
+```json
+{
+  "success": true,
+  "event_type": "checkout.session.completed",
+  "timestamp": "2024-01-15T10:30:00.000Z",
+  "data": {
+    "session_id": "cs_1234567890",
+    "subscription_id": "sub_1234567890",
+    "customer_email": "customer@example.com",
+    "customer_id": "cus_1234567890",
+    "metadata": {
+      "userId": "user123",
+      "clubId": "club456"
+    },
+    "payment_status": "paid",
+    "status": "active"
+  },
+  "message": "Subscription checkout completed successfully",
+  "action_required": {
+    "type": "update_subscription_status",
+    "status": "active",
+    "subscription_id": "sub_1234567890",
+    "user_id": "user123",
+    "club_id": "club456"
+  }
+}
+```
 
-#### Adding Database Integration:
+#### Supported Events and Actions:
 
-The webhook handler includes TODO comments where you can add your database update logic:
+| Event                           | Action Type                  | Description                       |
+| ------------------------------- | ---------------------------- | --------------------------------- |
+| `checkout.session.completed`    | `update_subscription_status` | New subscription activated        |
+| `checkout.session.expired`      | `update_subscription_status` | Checkout expired, mark incomplete |
+| `customer.subscription.created` | `create_subscription`        | New subscription record needed    |
+| `customer.subscription.updated` | `update_subscription`        | Subscription details changed      |
+| `customer.subscription.deleted` | `cancel_subscription`        | Subscription cancelled            |
+| `invoice.payment_succeeded`     | `record_payment`             | Payment successful                |
+| `invoice.payment_failed`        | `update_subscription_status` | Payment failed, mark past_due     |
+
+#### Frontend Integration Example:
 
 ```javascript
-// Example: Update user subscription status in your database
-// await updateUserSubscription(session.metadata.userId, 'active', session.subscription);
+// In your frontend, listen for webhook responses
+async function handleWebhookResponse(webhookData) {
+  const { action_required, data, message } = webhookData;
 
-// Example: Create subscription record in your database
-// await createSubscriptionRecord(subscription);
+  switch (action_required.type) {
+    case "update_subscription_status":
+      await updateUserSubscription(
+        action_required.user_id,
+        action_required.status,
+        action_required.subscription_id
+      );
+      break;
 
-// Example: Update subscription status in your database
-// await updateSubscriptionStatus(updatedSubscription.id, updatedSubscription.status);
+    case "create_subscription":
+      await createSubscriptionRecord({
+        subscriptionId: action_required.subscription_id,
+        userId: action_required.user_id,
+        status: action_required.status,
+        ...data,
+      });
+      break;
+
+    case "cancel_subscription":
+      await cancelUserSubscription(
+        action_required.user_id,
+        action_required.subscription_id
+      );
+      break;
+
+    case "record_payment":
+      await recordPayment({
+        invoiceId: data.invoice_id,
+        subscriptionId: data.subscription_id,
+        amount: action_required.amount,
+        status: action_required.status,
+      });
+      break;
+  }
+
+  // Show user notification
+  showNotification(message, "success");
+}
+
+// Example database update functions
+async function updateUserSubscription(userId, status, subscriptionId) {
+  // Update your database here
+  await fetch("/api/users/subscription", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      userId,
+      subscriptionStatus: status,
+      stripeSubscriptionId: subscriptionId,
+    }),
+  });
+}
+
+async function createSubscriptionRecord(subscriptionData) {
+  // Create subscription record in your database
+  await fetch("/api/subscriptions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(subscriptionData),
+  });
+}
 ```
 
 ### Webhook Setup
@@ -270,7 +357,7 @@ To handle Stripe webhooks, you'll need to:
 
 2. Configure your webhook endpoint in Stripe Dashboard:
 
-   - URL: `https://yourdomain.com/api/stripe/webhook`
+   - URL: `https://yourdomain.com/api/stripe/webhooks`
    - Events to listen for:
      - `checkout.session.completed`
      - `checkout.session.expired`
@@ -280,7 +367,7 @@ To handle Stripe webhooks, you'll need to:
      - `invoice.payment_succeeded`
      - `invoice.payment_failed`
 
-3. The webhook endpoint will automatically handle these events and log them to the console.
+3. The webhook endpoint will return structured responses that your frontend can use to update your database.
 
 ## Project Structure
 

@@ -227,6 +227,15 @@ router.post(
     }
 
     try {
+      let responseData = {
+        success: true,
+        event_type: event.type,
+        timestamp: new Date().toISOString(),
+        data: null,
+        message: "",
+        action_required: null,
+      };
+
       // Handle the event
       switch (event.type) {
         case "checkout.session.completed": {
@@ -234,13 +243,38 @@ router.post(
           console.log("✅ Checkout session completed:", session.id);
 
           if (session.mode === "subscription") {
-            console.log("📦 Subscription created:", session.subscription);
-            console.log("👤 Customer:", session.customer_email);
-            console.log("🏷️ Metadata:", session.metadata);
-
-            // TODO: Add your database update logic here
-            // Example: Update user subscription status in your database
-            // await updateUserSubscription(session.metadata.userId, 'active', session.subscription);
+            responseData.data = {
+              session_id: session.id,
+              subscription_id: session.subscription,
+              customer_email: session.customer_email,
+              customer_id: session.customer,
+              metadata: session.metadata,
+              payment_status: session.payment_status,
+              status: "active",
+            };
+            responseData.message =
+              "Subscription checkout completed successfully";
+            responseData.action_required = {
+              type: "update_subscription_status",
+              status: "active",
+              subscription_id: session.subscription,
+              user_id: session.metadata?.userId,
+              club_id: session.metadata?.clubId,
+            };
+          } else {
+            responseData.data = {
+              session_id: session.id,
+              customer_email: session.customer_email,
+              customer_id: session.customer,
+              metadata: session.metadata,
+              payment_status: session.payment_status,
+            };
+            responseData.message = "One-time payment completed successfully";
+            responseData.action_required = {
+              type: "update_payment_status",
+              status: "completed",
+              session_id: session.id,
+            };
           }
           break;
         }
@@ -248,83 +282,147 @@ router.post(
         case "checkout.session.expired": {
           const expiredSession = event.data.object;
           console.log("⏰ Checkout session expired:", expiredSession.id);
-          console.log("🏷️ Metadata:", expiredSession.metadata);
 
-          // TODO: Add your database update logic here
-          // Example: Mark subscription as incomplete
-          // await updateUserSubscription(expiredSession.metadata.userId, 'incomplete');
+          responseData.data = {
+            session_id: expiredSession.id,
+            metadata: expiredSession.metadata,
+            status: "expired",
+          };
+          responseData.message = "Checkout session expired";
+          responseData.action_required = {
+            type: "update_subscription_status",
+            status: "incomplete",
+            user_id: expiredSession.metadata?.userId,
+            club_id: expiredSession.metadata?.clubId,
+          };
           break;
         }
 
         case "customer.subscription.created": {
           const subscription = event.data.object;
           console.log("🎉 Subscription created:", subscription.id);
-          console.log("📊 Status:", subscription.status);
-          console.log("🏷️ Metadata:", subscription.metadata);
 
-          // TODO: Add your database update logic here
-          // Example: Create subscription record in your database
-          // await createSubscriptionRecord(subscription);
+          responseData.data = {
+            subscription_id: subscription.id,
+            customer_id: subscription.customer,
+            status: subscription.status,
+            current_period_start: subscription.current_period_start,
+            current_period_end: subscription.current_period_end,
+            metadata: subscription.metadata,
+          };
+          responseData.message = "Subscription created successfully";
+          responseData.action_required = {
+            type: "create_subscription",
+            subscription_id: subscription.id,
+            status: subscription.status,
+            user_id: subscription.metadata?.userId,
+            club_id: subscription.metadata?.clubId,
+          };
           break;
         }
 
         case "customer.subscription.updated": {
           const updatedSubscription = event.data.object;
           console.log("🔄 Subscription updated:", updatedSubscription.id);
-          console.log("📊 New status:", updatedSubscription.status);
-          console.log("🏷️ Metadata:", updatedSubscription.metadata);
 
-          // TODO: Add your database update logic here
-          // Example: Update subscription status in your database
-          // await updateSubscriptionStatus(updatedSubscription.id, updatedSubscription.status);
+          responseData.data = {
+            subscription_id: updatedSubscription.id,
+            customer_id: updatedSubscription.customer,
+            status: updatedSubscription.status,
+            current_period_start: updatedSubscription.current_period_start,
+            current_period_end: updatedSubscription.current_period_end,
+            metadata: updatedSubscription.metadata,
+          };
+          responseData.message = "Subscription updated";
+          responseData.action_required = {
+            type: "update_subscription",
+            subscription_id: updatedSubscription.id,
+            status: updatedSubscription.status,
+            user_id: updatedSubscription.metadata?.userId,
+            club_id: updatedSubscription.metadata?.clubId,
+          };
           break;
         }
 
         case "customer.subscription.deleted": {
           const deletedSubscription = event.data.object;
           console.log("🗑️ Subscription deleted:", deletedSubscription.id);
-          console.log("🏷️ Metadata:", deletedSubscription.metadata);
 
-          // TODO: Add your database update logic here
-          // Example: Mark subscription as cancelled in your database
-          // await updateSubscriptionStatus(deletedSubscription.id, 'cancelled');
+          responseData.data = {
+            subscription_id: deletedSubscription.id,
+            customer_id: deletedSubscription.customer,
+            status: "cancelled",
+            metadata: deletedSubscription.metadata,
+          };
+          responseData.message = "Subscription cancelled";
+          responseData.action_required = {
+            type: "cancel_subscription",
+            subscription_id: deletedSubscription.id,
+            status: "cancelled",
+            user_id: deletedSubscription.metadata?.userId,
+            club_id: deletedSubscription.metadata?.clubId,
+          };
           break;
         }
 
         case "invoice.payment_succeeded": {
           const invoice = event.data.object;
           console.log("💰 Invoice payment succeeded:", invoice.id);
-          console.log("👤 Customer:", invoice.customer);
-          console.log("💵 Amount:", invoice.amount_paid);
 
-          // TODO: Add your database update logic here
-          // Example: Record successful payment in your database
-          // await recordPayment(invoice);
+          responseData.data = {
+            invoice_id: invoice.id,
+            subscription_id: invoice.subscription,
+            customer_id: invoice.customer,
+            amount_paid: invoice.amount_paid,
+            currency: invoice.currency,
+            status: "paid",
+          };
+          responseData.message = "Payment succeeded";
+          responseData.action_required = {
+            type: "record_payment",
+            invoice_id: invoice.id,
+            subscription_id: invoice.subscription,
+            amount: invoice.amount_paid,
+            status: "paid",
+          };
           break;
         }
 
         case "invoice.payment_failed": {
           const failedInvoice = event.data.object;
           console.log("❌ Invoice payment failed:", failedInvoice.id);
-          console.log("👤 Customer:", failedInvoice.customer);
-          console.log("🏷️ Metadata:", failedInvoice.metadata);
 
-          // TODO: Add your database update logic here
-          // Example: Mark subscription as past_due in your database
-          // await updateSubscriptionStatus(failedInvoice.subscription, 'past_due');
+          responseData.data = {
+            invoice_id: failedInvoice.id,
+            subscription_id: failedInvoice.subscription,
+            customer_id: failedInvoice.customer,
+            amount_due: failedInvoice.amount_due,
+            currency: failedInvoice.currency,
+            status: "failed",
+          };
+          responseData.message = "Payment failed";
+          responseData.action_required = {
+            type: "update_subscription_status",
+            subscription_id: failedInvoice.subscription,
+            status: "past_due",
+            invoice_id: failedInvoice.id,
+          };
           break;
         }
 
         default:
           console.log(`ℹ️ Unhandled event type: ${event.type}`);
+          responseData.message = `Unhandled event: ${event.type}`;
+          responseData.data = event.data.object;
       }
 
-      res.json({ success: true, received: true });
+      res.json(responseData);
     } catch (error) {
       console.error("❌ Error processing webhook:", error);
       res.status(500).json({
         success: false,
         error: "Error processing webhook",
+        message: error.message,
       });
     }
   }
