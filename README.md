@@ -78,6 +78,9 @@ The server will start on `http://localhost:3000`
 - `GET /api/stripe/publishable-key` - Get publishable key for frontend
 - `POST /api/stripe/payment-intents` - Create a payment intent
 - `GET /api/stripe/payment-intents/:id` - Get payment intent status
+- `POST /api/stripe/checkout-sessions` - Create Stripe Checkout session for subscriptions
+- `GET /api/stripe/checkout-sessions/:id` - Get checkout session status
+- `POST /api/stripe/webhook` - Handle Stripe webhook events
 
 ## Usage Examples
 
@@ -141,6 +144,93 @@ Response:
 }
 ```
 
+### Create Checkout Session
+
+```bash
+curl -X POST http://localhost:3000/api/stripe/checkout-sessions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "price_id": "price_1234567890",
+    "success_url": "https://yourdomain.com/success",
+    "cancel_url": "https://yourdomain.com/cancel",
+    "customer_email": "customer@example.com",
+    "mode": "subscription",
+    "metadata": {
+      "user_id": "123",
+      "plan": "premium"
+    }
+  }'
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "session_id": "cs_1234567890",
+  "url": "https://checkout.stripe.com/pay/cs_1234567890",
+  "checkout_session": {
+    "id": "cs_1234567890",
+    "url": "https://checkout.stripe.com/pay/cs_1234567890",
+    "status": "open",
+    "mode": "subscription",
+    "created": 1642234567
+  }
+}
+```
+
+### Get Checkout Session Status
+
+```bash
+curl http://localhost:3000/api/stripe/checkout-sessions/cs_1234567890
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "checkout_session": {
+    "id": "cs_1234567890",
+    "status": "complete",
+    "mode": "subscription",
+    "payment_status": "paid",
+    "customer_email": "customer@example.com",
+    "customer": "cus_1234567890",
+    "subscription": "sub_1234567890",
+    "created": 1642234567,
+    "expires_at": 1642238167,
+    "metadata": {
+      "user_id": "123",
+      "plan": "premium"
+    }
+  }
+}
+```
+
+### Webhook Setup
+
+To handle Stripe webhooks, you'll need to:
+
+1. Add your webhook secret to `.env`:
+
+   ```env
+   STRIPE_WEBHOOK_SECRET=whsec_your_webhook_secret_here
+   ```
+
+2. Configure your webhook endpoint in Stripe Dashboard:
+
+   - URL: `https://yourdomain.com/api/stripe/webhook`
+   - Events to listen for:
+     - `checkout.session.completed`
+     - `customer.subscription.created`
+     - `customer.subscription.updated`
+     - `customer.subscription.deleted`
+     - `invoice.payment_succeeded`
+     - `invoice.payment_failed`
+
+3. The webhook endpoint will automatically handle these events and log them to the console.
+
 ## Project Structure
 
 ```
@@ -197,11 +287,21 @@ Clubbix-Backend/
 2. Check that you're using the right environment (test vs live)
 3. Ensure your Stripe account is active
 
+### Webhook Issues
+
+1. Verify your `STRIPE_WEBHOOK_SECRET` is correct
+2. Ensure your webhook endpoint is publicly accessible
+3. Check that the webhook URL in Stripe Dashboard matches your endpoint
+4. Verify the webhook events are properly configured in Stripe Dashboard
+
 ### Common Errors
 
 - **"STRIPE_SECRET_KEY is required"** - Add your Stripe secret key to `.env`
 - **"Stripe connection failed"** - Check your internet connection and Stripe API status
 - **"Publishable key not configured"** - Add `STRIPE_PUBLISHABLE_KEY` to `.env`
+- **"Webhook secret not configured"** - Add `STRIPE_WEBHOOK_SECRET` to `.env`
+- **"Webhook signature verification failed"** - Check your webhook secret and endpoint configuration
+- **"Price ID is required for subscription checkout"** - Provide a valid Stripe price ID when creating checkout sessions
 
 ## License
 
