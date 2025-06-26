@@ -14,11 +14,6 @@ const PORT = process.env.PORT || 3000;
 app.use(helmet()); // Security headers
 app.use(cors()); // Enable CORS
 app.use(morgan("combined")); // Logging
-
-// Special handling for Stripe webhooks - must be before JSON body parser
-app.use("/api/stripe/webhook", express.raw({ type: "application/json" }));
-
-// Regular body parsing for other routes
 app.use(express.json()); // Parse JSON bodies
 app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
 
