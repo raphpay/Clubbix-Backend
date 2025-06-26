@@ -1,6 +1,6 @@
 # Clubbix-Backend
 
-A Node.js backend with Stripe SDK integration for payment processing.
+A Node.js backend with Stripe SDK integration for payment processing and subscription management.
 
 ## Features
 
@@ -9,6 +9,7 @@ A Node.js backend with Stripe SDK integration for payment processing.
 - ✅ Health check endpoints with Stripe status
 - ✅ Payment intent creation and management
 - ✅ Subscription checkout sessions
+- ✅ Webhook handling for subscription lifecycle events
 - ✅ CORS enabled for frontend integration
 - ✅ Comprehensive error handling
 - ✅ Logging with Morgan
@@ -40,6 +41,9 @@ NODE_ENV=development
 # Stripe Configuration
 STRIPE_SECRET_KEY=sk_test_your_stripe_secret_key_here
 STRIPE_PUBLISHABLE_KEY=pk_test_your_stripe_publishable_key_here
+
+# Optional: Webhook secret for Stripe webhooks
+STRIPE_WEBHOOK_SECRET=whsec_your_webhook_secret_here
 ```
 
 ### 3. Get Stripe API Keys
@@ -49,7 +53,21 @@ STRIPE_PUBLISHABLE_KEY=pk_test_your_stripe_publishable_key_here
 3. Navigate to Developers → API keys
 4. Copy your test keys (use live keys for production)
 
-### 4. Run the Server
+### 4. Configure Stripe Webhooks (Optional but Recommended)
+
+1. In your Stripe Dashboard, go to Developers → Webhooks
+2. Add endpoint: `https://yourdomain.com/api/stripe/webhook`
+3. Select these events:
+   - `checkout.session.completed`
+   - `checkout.session.expired`
+   - `customer.subscription.created`
+   - `customer.subscription.updated`
+   - `customer.subscription.deleted`
+   - `invoice.payment_succeeded`
+   - `invoice.payment_failed`
+4. Copy the webhook signing secret to your `.env`
+
+### 5. Run the Server
 
 **Development mode (with auto-restart):**
 
@@ -81,6 +99,7 @@ The server will start on `http://localhost:3000`
 - `GET /api/stripe/payment-intents/:id` - Get payment intent status
 - `POST /api/stripe/checkout-sessions` - Create Stripe Checkout session for subscriptions
 - `GET /api/stripe/checkout-sessions/:id` - Get checkout session status
+- `POST /api/stripe/webhook` - Handle Stripe webhook events
 
 ## Usage Examples
 
@@ -208,6 +227,61 @@ Response:
 }
 ```
 
+## Webhook Integration
+
+### Automatic Event Handling
+
+The webhook handler automatically processes Stripe events and logs them to the console:
+
+#### Supported Events:
+
+- **`checkout.session.completed`** → Logs successful checkout completion
+- **`checkout.session.expired`** → Logs expired checkout sessions
+- **`customer.subscription.created`** → Logs new subscription creation
+- **`customer.subscription.updated`** → Logs subscription updates
+- **`customer.subscription.deleted`** → Logs subscription cancellations
+- **`invoice.payment_succeeded`** → Logs successful payments
+- **`invoice.payment_failed`** → Logs failed payments
+
+#### Adding Database Integration:
+
+The webhook handler includes TODO comments where you can add your database update logic:
+
+```javascript
+// Example: Update user subscription status in your database
+// await updateUserSubscription(session.metadata.userId, 'active', session.subscription);
+
+// Example: Create subscription record in your database
+// await createSubscriptionRecord(subscription);
+
+// Example: Update subscription status in your database
+// await updateSubscriptionStatus(updatedSubscription.id, updatedSubscription.status);
+```
+
+### Webhook Setup
+
+To handle Stripe webhooks, you'll need to:
+
+1. Add your webhook secret to `.env`:
+
+   ```env
+   STRIPE_WEBHOOK_SECRET=whsec_your_webhook_secret_here
+   ```
+
+2. Configure your webhook endpoint in Stripe Dashboard:
+
+   - URL: `https://yourdomain.com/api/stripe/webhook`
+   - Events to listen for:
+     - `checkout.session.completed`
+     - `checkout.session.expired`
+     - `customer.subscription.created`
+     - `customer.subscription.updated`
+     - `customer.subscription.deleted`
+     - `invoice.payment_succeeded`
+     - `invoice.payment_failed`
+
+3. The webhook endpoint will automatically handle these events and log them to the console.
+
 ## Project Structure
 
 ```
@@ -217,7 +291,7 @@ Clubbix-Backend/
 │   │   └── stripe.js          # Stripe SDK configuration
 │   ├── routes/
 │   │   ├── health.js          # Health check endpoints
-│   │   └── stripe.js          # Stripe API endpoints
+│   │   └── stripe.js          # Stripe API endpoints with webhook handling
 │   └── server.js              # Main server file
 ├── .env                       # Environment variables (create from env.example)
 ├── .gitignore                 # Git ignore rules
@@ -247,6 +321,7 @@ Clubbix-Backend/
 - CORS configuration
 - Input validation
 - Error handling without exposing internals
+- Webhook signature verification
 
 ## Production Deployment
 
@@ -255,6 +330,7 @@ Clubbix-Backend/
 3. Configure proper CORS origins
 4. Set up environment variables securely
 5. Use a process manager like PM2
+6. Ensure your webhook endpoint is publicly accessible
 
 ## Troubleshooting
 
@@ -264,11 +340,20 @@ Clubbix-Backend/
 2. Check that you're using the right environment (test vs live)
 3. Ensure your Stripe account is active
 
+### Webhook Issues
+
+1. Verify your `STRIPE_WEBHOOK_SECRET` is correct
+2. Ensure your webhook endpoint is publicly accessible
+3. Check that the webhook URL in Stripe Dashboard matches your endpoint
+4. Verify the webhook events are properly configured in Stripe Dashboard
+
 ### Common Errors
 
 - **"STRIPE_SECRET_KEY is required"** - Add your Stripe secret key to `.env`
 - **"Stripe connection failed"** - Check your internet connection and Stripe API status
 - **"Publishable key not configured"** - Add `STRIPE_PUBLISHABLE_KEY` to `.env`
+- **"Webhook secret not configured"** - Add `STRIPE_WEBHOOK_SECRET` to `.env`
+- **"Webhook signature verification failed"** - Check your webhook secret and endpoint configuration
 - **"Price ID is required for subscription checkout"** - Provide a valid Stripe price ID when creating checkout sessions
 - **"Success URL and Cancel URL are required"** - Provide both URLs when creating checkout sessions
 

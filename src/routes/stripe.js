@@ -198,6 +198,138 @@ router.get("/checkout-sessions/:id", validateStripe, async (req, res) => {
   }
 });
 
+// Handle Stripe webhook events
+router.post(
+  "/webhooks",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
+    const sig = req.headers["stripe-signature"];
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+    if (!webhookSecret) {
+      console.error("STRIPE_WEBHOOK_SECRET not configured");
+      return res.status(500).json({
+        success: false,
+        error: "Webhook secret not configured",
+      });
+    }
+
+    let event;
+
+    try {
+      event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+    } catch (err) {
+      console.error("Webhook signature verification failed:", err.message);
+      return res.status(400).json({
+        success: false,
+        error: "Webhook signature verification failed",
+      });
+    }
+
+    try {
+      // Handle the event
+      switch (event.type) {
+        case "checkout.session.completed": {
+          const session = event.data.object;
+          console.log("✅ Checkout session completed:", session.id);
+
+          if (session.mode === "subscription") {
+            console.log("📦 Subscription created:", session.subscription);
+            console.log("👤 Customer:", session.customer_email);
+            console.log("🏷️ Metadata:", session.metadata);
+
+            // TODO: Add your database update logic here
+            // Example: Update user subscription status in your database
+            // await updateUserSubscription(session.metadata.userId, 'active', session.subscription);
+          }
+          break;
+        }
+
+        case "checkout.session.expired": {
+          const expiredSession = event.data.object;
+          console.log("⏰ Checkout session expired:", expiredSession.id);
+          console.log("🏷️ Metadata:", expiredSession.metadata);
+
+          // TODO: Add your database update logic here
+          // Example: Mark subscription as incomplete
+          // await updateUserSubscription(expiredSession.metadata.userId, 'incomplete');
+          break;
+        }
+
+        case "customer.subscription.created": {
+          const subscription = event.data.object;
+          console.log("🎉 Subscription created:", subscription.id);
+          console.log("📊 Status:", subscription.status);
+          console.log("🏷️ Metadata:", subscription.metadata);
+
+          // TODO: Add your database update logic here
+          // Example: Create subscription record in your database
+          // await createSubscriptionRecord(subscription);
+          break;
+        }
+
+        case "customer.subscription.updated": {
+          const updatedSubscription = event.data.object;
+          console.log("🔄 Subscription updated:", updatedSubscription.id);
+          console.log("📊 New status:", updatedSubscription.status);
+          console.log("🏷️ Metadata:", updatedSubscription.metadata);
+
+          // TODO: Add your database update logic here
+          // Example: Update subscription status in your database
+          // await updateSubscriptionStatus(updatedSubscription.id, updatedSubscription.status);
+          break;
+        }
+
+        case "customer.subscription.deleted": {
+          const deletedSubscription = event.data.object;
+          console.log("🗑️ Subscription deleted:", deletedSubscription.id);
+          console.log("🏷️ Metadata:", deletedSubscription.metadata);
+
+          // TODO: Add your database update logic here
+          // Example: Mark subscription as cancelled in your database
+          // await updateSubscriptionStatus(deletedSubscription.id, 'cancelled');
+          break;
+        }
+
+        case "invoice.payment_succeeded": {
+          const invoice = event.data.object;
+          console.log("💰 Invoice payment succeeded:", invoice.id);
+          console.log("👤 Customer:", invoice.customer);
+          console.log("💵 Amount:", invoice.amount_paid);
+
+          // TODO: Add your database update logic here
+          // Example: Record successful payment in your database
+          // await recordPayment(invoice);
+          break;
+        }
+
+        case "invoice.payment_failed": {
+          const failedInvoice = event.data.object;
+          console.log("❌ Invoice payment failed:", failedInvoice.id);
+          console.log("👤 Customer:", failedInvoice.customer);
+          console.log("🏷️ Metadata:", failedInvoice.metadata);
+
+          // TODO: Add your database update logic here
+          // Example: Mark subscription as past_due in your database
+          // await updateSubscriptionStatus(failedInvoice.subscription, 'past_due');
+          break;
+        }
+
+        default:
+          console.log(`ℹ️ Unhandled event type: ${event.type}`);
+      }
+
+      res.json({ success: true, received: true });
+    } catch (error) {
+      console.error("❌ Error processing webhook:", error);
+      res.status(500).json({
+        success: false,
+        error: "Error processing webhook",
+      });
+    }
+  }
+);
+
 // Get publishable key (for frontend)
 router.get("/publishable-key", (req, res) => {
   const publishableKey = process.env.STRIPE_PUBLISHABLE_KEY;
