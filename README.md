@@ -176,6 +176,7 @@ curl -X POST http://localhost:3000/api/stripe/checkout-sessions \
     "mode": "subscription",
     "metadata": {
       "user_id": "123",
+      "clubId": "456"
       "plan": "premium"
     }
   }'

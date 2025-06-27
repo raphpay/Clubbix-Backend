@@ -2,6 +2,8 @@ const express = require("express");
 const router = express.Router();
 const { stripe, validateStripeConfig } = require("../config/stripe");
 const { db } = require("../config/firebase");
+const { Timestamp } = require("firebase-admin").firestore;
+const admin = require("firebase-admin");
 
 // Middleware to validate Stripe configuration
 const validateStripe = (req, res, next) => {
@@ -228,18 +230,71 @@ router.post(
     }
 
     try {
-      // Prepare the data to save
       let firebaseData = {
         event_type: event.type,
         received_at: new Date().toISOString(),
         data: event.data.object,
       };
 
-      // Optionally, you can customize what you save for each event type
-      // For example, add extra fields for certain events
+      // Helper to update club subscription data
+      async function updateClubSubscription(clubId, data) {
+        if (!clubId) return;
+        await admin.firestore().collection("clubs").doc(clubId).set(
+          {
+            subscription: data,
+            updatedAt: Timestamp.now(),
+          },
+          { merge: true }
+        );
+      }
+
       switch (event.type) {
         case "checkout.session.completed": {
           const session = event.data.object;
+          const metadata = session.metadata || {};
+          const clubId = metadata.clubId;
+          if (session.mode === "subscription" && clubId) {
+            // You may need to fetch the subscription for full details
+            let subscription;
+            if (session.subscription) {
+              subscription = await stripe.subscriptions.retrieve(
+                session.subscription
+              );
+            }
+            const plan =
+              metadata.plan ||
+              subscription?.items?.data?.[0]?.price?.nickname ||
+              "";
+            const billingCycle =
+              metadata.billingCycle ||
+              subscription?.items?.data?.[0]?.price?.recurring?.interval ||
+              "";
+            const status = subscription?.status || "active";
+            const currentPeriodStart = subscription?.current_period_start
+              ? Timestamp.fromMillis(subscription.current_period_start * 1000)
+              : Timestamp.now();
+            const currentPeriodEnd = subscription?.current_period_end
+              ? Timestamp.fromMillis(subscription.current_period_end * 1000)
+              : Timestamp.now();
+            const cancelAtPeriodEnd = !!subscription?.cancel_at_period_end;
+            const createdAt = subscription?.created
+              ? Timestamp.fromMillis(subscription.created * 1000)
+              : Timestamp.now();
+            const updatedAt = Timestamp.now();
+            const clubSubscriptionData = {
+              subscriptionId: subscription?.id,
+              clubId,
+              plan,
+              billingCycle,
+              status,
+              currentPeriodStart,
+              currentPeriodEnd,
+              cancelAtPeriodEnd,
+              createdAt,
+              updatedAt,
+            };
+            await updateClubSubscription(clubId, clubSubscriptionData);
+          }
           firebaseData.session_id = session.id;
           firebaseData.mode = session.mode;
           firebaseData.customer_email = session.customer_email;
@@ -252,6 +307,43 @@ router.post(
         case "customer.subscription.updated":
         case "customer.subscription.deleted": {
           const subscription = event.data.object;
+          const metadata = subscription.metadata || {};
+          const clubId = metadata.clubId;
+          if (clubId) {
+            const plan =
+              metadata.plan ||
+              subscription.items?.data?.[0]?.price?.nickname ||
+              "";
+            const billingCycle =
+              metadata.billingCycle ||
+              subscription.items?.data?.[0]?.price?.recurring?.interval ||
+              "";
+            const status = subscription.status;
+            const currentPeriodStart = subscription.current_period_start
+              ? Timestamp.fromMillis(subscription.current_period_start * 1000)
+              : Timestamp.now();
+            const currentPeriodEnd = subscription.current_period_end
+              ? Timestamp.fromMillis(subscription.current_period_end * 1000)
+              : Timestamp.now();
+            const cancelAtPeriodEnd = !!subscription.cancel_at_period_end;
+            const createdAt = subscription.created
+              ? Timestamp.fromMillis(subscription.created * 1000)
+              : Timestamp.now();
+            const updatedAt = Timestamp.now();
+            const clubSubscriptionData = {
+              subscriptionId: subscription.id,
+              clubId,
+              plan,
+              billingCycle,
+              status,
+              currentPeriodStart,
+              currentPeriodEnd,
+              cancelAtPeriodEnd,
+              createdAt,
+              updatedAt,
+            };
+            await updateClubSubscription(clubId, clubSubscriptionData);
+          }
           firebaseData.subscription_id = subscription.id;
           firebaseData.customer_id = subscription.customer;
           firebaseData.status = subscription.status;
@@ -273,7 +365,11 @@ router.post(
       }
 
       // Save to Firestore (collection: 'stripe_webhooks', doc: event.id)
-      await db.collection("stripeWebhooks").doc(event.id).set(firebaseData);
+      await admin
+        .firestore()
+        .collection("stripe_webhooks")
+        .doc(event.id)
+        .set(firebaseData);
 
       res.status(200).json({
         success: true,
