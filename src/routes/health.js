@@ -75,4 +75,18 @@ router.get("/detailed", async (req, res) => {
   }
 });
 
+// router.get("/test-firebase", async (req, res) => {
+//   try {
+//     await db.collection("testCollection").doc("exampleDoc").set({
+//       message: "Hello from Node.js backend!",
+//       timestamp: new Date(),
+//     });
+
+//     res.send("Data written to Firebase successfully!");
+//   } catch (error) {
+//     console.error(error);
+//     res.status(500).send("Error writing to Firebase");
+//   }
+// });
+
 module.exports = router;

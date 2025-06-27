@@ -99,7 +99,7 @@ The server will start on `http://localhost:3000`
 - `GET /api/stripe/payment-intents/:id` - Get payment intent status
 - `POST /api/stripe/checkout-sessions` - Create Stripe Checkout session for subscriptions
 - `GET /api/stripe/checkout-sessions/:id` - Get checkout session status
-- `POST /api/stripe/webhooks` - Handle Stripe webhook events
+- `POST /api/stripe/webhook` - Handle Stripe webhook events
 
 ## Usage Examples
 
@@ -357,7 +357,7 @@ To handle Stripe webhooks, you'll need to:
 
 2. Configure your webhook endpoint in Stripe Dashboard:
 
-   - URL: `https://yourdomain.com/api/stripe/webhooks`
+   - URL: `https://yourdomain.com/api/stripe/webhook`
    - Events to listen for:
      - `checkout.session.completed`
      - `checkout.session.expired`
