@@ -237,9 +237,18 @@ router.post(
       };
 
       // Helper to update club subscription data
+      // NOTE: Club documents must be created with all required fields before any subscription update.
       async function updateClubSubscription(clubId, data) {
         if (!clubId) return;
-        await admin.firestore().collection("clubs").doc(clubId).set(
+        const clubRef = admin.firestore().collection("clubs").doc(clubId);
+        const clubSnap = await clubRef.get();
+        if (!clubSnap.exists) {
+          console.warn(
+            `Club document with ID ${clubId} does not exist. Subscription update skipped.`
+          );
+          return;
+        }
+        await clubRef.set(
           {
             subscription: data,
             updatedAt: Timestamp.now(),
@@ -281,6 +290,12 @@ router.post(
               ? Timestamp.fromMillis(subscription.created * 1000)
               : Timestamp.now();
             const updatedAt = Timestamp.now();
+            const customerId =
+              session.customer || subscription?.customer || null;
+            const priceId =
+              metadata.price_id ||
+              subscription?.items?.data?.[0]?.price?.id ||
+              null;
             const clubSubscriptionData = {
               subscriptionId: subscription?.id,
               clubId,
@@ -292,6 +307,8 @@ router.post(
               cancelAtPeriodEnd,
               createdAt,
               updatedAt,
+              customerId,
+              priceId,
             };
             await updateClubSubscription(clubId, clubSubscriptionData);
           }
@@ -401,6 +418,55 @@ router.get("/publishable-key", (req, res) => {
     success: true,
     publishable_key: publishableKey,
   });
+});
+
+// Create Stripe Customer Portal session
+router.post("/customer-portal", validateStripe, async (req, res) => {
+  try {
+    const { customer_id, customer_email, return_url } = req.body;
+    if (!customer_id && !customer_email) {
+      return res.status(400).json({
+        success: false,
+        error: "Either customer_id or customer_email is required",
+      });
+    }
+    if (!return_url) {
+      return res.status(400).json({
+        success: false,
+        error: "return_url is required",
+      });
+    }
+    let customerId = customer_id;
+    if (!customerId && customer_email) {
+      // Find customer by email
+      const customers = await stripe.customers.list({
+        email: customer_email,
+        limit: 1,
+      });
+      if (!customers.data.length) {
+        return res.status(404).json({
+          success: false,
+          error: "No Stripe customer found for the provided email",
+        });
+      }
+      customerId = customers.data[0].id;
+    }
+    // Create the portal session
+    const session = await stripe.billingPortal.sessions.create({
+      customer: customerId,
+      return_url,
+    });
+    res.json({
+      success: true,
+      url: session.url,
+      session_id: session.id,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
 });
 
 module.exports = router;
